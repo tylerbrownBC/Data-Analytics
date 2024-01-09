@@ -1,0 +1,55 @@
+
+WITH
+ACCOUNTS AS (SELECT DISTINCT CA.ACCOUNTID,
+                             CA.CUSTOMERID,
+                             CA.ACCOUNTNUMBER,
+                             CA.STATE
+             FROM SERVICING.CONTACT.VCUSTOMERADDRESSESHISTORY CA
+             WHERE CA.ADDRESSTYPEID = 2
+               AND ca.state ilike 'IA' AND customeraccounttype ilike 'Buyer'
+),
+
+loan_info AS (SELECT DISTINCT dl.ACCOUNTNUMBER, dl.SERVICINGCOMPANY
+            -- distinct dl.COMPANYNAME
+              FROM SERVICING.LOAN.VSTATICPOOLANALYSIS dl
+                       INNER JOIN accounts ac
+                                  on dl.ACCOUNTNUMBER = ac.ACCOUNTNUMBER
+              WHERE NOTESTATUS IN ('A', 'K', 'R') AND  ASOFDATE = '2023-12-31' --AND dl.ACCOUNTNUMBER = '167002563001'
+
+),
+
+ranked_data AS (
+ SELECT
+   fld.asofdate,
+   fld.ACCOUNTNUMBER,
+   fld.CURRENTPRINCIPALBALANCE,
+   RANK() OVER (PARTITION BY DATE_TRUNC('MONTH', fld.asofdate) ORDER BY fld.asofdate DESC) AS rnk
+ FROM
+   SERVICING.LOAN.VSTATICPOOLANALYSIS fld
+ INNER JOIN loan_info li
+    ON li.accountnumber = fld.ACCOUNTNUMBER
+ WHERE  fld.ASOFDATE BETWEEN '2022-01-01' AND '2023-12-31'
+),
+
+output AS(
+    SELECT rd.*,
+            ad.state
+    FROM ranked_data rd
+    left join (SELECT * FROM servicing.contact.vcustomeraddresseshistory WHERE addresstypeid = 2 AND customeraccounttype ilike 'Buyer') ad
+    ON rd.accountnumber = ad.accountnumber AND rd.asofdate BETWEEN ad.effectivestartdate AND ad.effectiveenddate
+    WHERE rnk = 1
+
+)
+
+
+SELECT ASOFDATE,
+       count(o.ACCOUNTNUMBER) AS total_accounts,
+       SUM(CURRENTPRINCIPALBALANCE) AS total_monthly_loan_balance,
+       AVG(CURRENTPRINCIPALBALANCE) AS average_monthly_loan_balance
+FROM output o
+LEFT JOIN SERVICING.LOAN.DIMLOAN dl
+ON o.ACCOUNTNUMBER = dl.ACCOUNTNUMBER
+WHERE POOLOWNER != 'GF' AND COMPANYNAME != 'GoFi' AND state ilike 'IA'
+GROUP BY ALL
+    ORDER BY ASOFDATE;
+
