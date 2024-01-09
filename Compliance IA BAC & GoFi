@@ -1,4 +1,4 @@
-
+--compliance request for end of 2023
 WITH
 ACCOUNTS AS (SELECT DISTINCT CA.ACCOUNTID,
                              CA.CUSTOMERID,
